@@ -259,6 +259,12 @@ test("providers keep their configured order whatever order their model lists arr
   assert.deepEqual(catalogEntries().map((e) => e.provider.id).filter((id) => ["placeholder", "fake", "picky", "notools"].includes(id)), ["placeholder", "fake", "picky", "notools"]);
 });
 
+test("the fgw label free-gateway means the whole free chain", async () => {
+  const res = await post("/v1/messages", { model: "free-gateway", max_tokens: 10, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(res.status, 200);
+  assert.ok(res.headers.get("x-gateway-model"));
+});
+
 test("models list and health", async () => {
   const models = await (await fetch(`${gateway}/v1/models`, { headers: { "x-api-key": KEY } })).json();
   assert.ok(models.data.some((m) => m.id === "fake::good"));

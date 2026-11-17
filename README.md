@@ -48,8 +48,11 @@ fgw status                    # model yang siap dan sisa kuota hari ini
 fgw env                       # variabel untuk dipakai di shell sendiri
 ```
 
-Tanpa `fgw`, cukup set `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` dan `ANTHROPIC_AUTH_TOKEN=<GATEWAY_KEY>` lalu
-jalankan `claude`.
+Lewat `fgw`, Claude Code menampilkan **`free-gateway`** sebagai nama model, bukan model Claude dari setting-mu
+(yang akan terlihat seperti ditagih per token). Gateway membaca nama itu sebagai rantai model gratis.
+
+Tanpa `fgw`, cukup set `ANTHROPIC_BASE_URL=http://127.0.0.1:8787`, `ANTHROPIC_AUTH_TOKEN=<GATEWAY_KEY>`, dan
+(opsional) `ANTHROPIC_MODEL=free-gateway`, lalu jalankan `claude`.
 
 **Jujur soal kualitas:** model gratis terbaik untuk Claude Code saat ini adalah Gemini 3.x Pro dan Flash. Model ini
 cukup untuk tugas ringan sampai menengah, tapi jelas di bawah Claude untuk pekerjaan besar. Groq free tier hanya 8.000
@@ -129,7 +132,7 @@ Cloudflare Access, set `TRUST_CF_ACCESS=1` agar pengguna yang sudah login bisa m
 ### Tes
 
 ```bash
-npm test     # 15 tes end-to-end dengan upstream palsu
+npm test     # 16 tes end-to-end dengan upstream palsu
 ```
 
 Lisensi MIT.
@@ -181,8 +184,11 @@ fgw status                    # models ready and quota left today
 fgw env                       # the variables to use in your own shell
 ```
 
-Without `fgw`, set `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` and `ANTHROPIC_AUTH_TOKEN=<GATEWAY_KEY>` and run
-`claude`.
+Through `fgw`, Claude Code shows **`free-gateway`** as the model, not the Claude model from your settings (which would
+look billed per token). The gateway reads that name as the free chain.
+
+Without `fgw`, set `ANTHROPIC_BASE_URL=http://127.0.0.1:8787`, `ANTHROPIC_AUTH_TOKEN=<GATEWAY_KEY>` and (optionally)
+`ANTHROPIC_MODEL=free-gateway`, and run `claude`.
 
 **Honest note on quality:** the best free models for Claude Code right now are Gemini 3.x Pro and Flash. They are fine
 for small to medium tasks but clearly below Claude for big work. Groq's free tier allows only 8,000 tokens per minute,
@@ -259,7 +265,7 @@ Cloudflare Access, set `TRUST_CF_ACCESS=1` so logged-in users can open it withou
 ### Tests
 
 ```bash
-npm test     # 15 end-to-end tests against fake upstreams
+npm test     # 16 end-to-end tests against fake upstreams
 ```
 
 MIT license.

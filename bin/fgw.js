@@ -66,6 +66,9 @@ async function claude(args) {
   }
   const env = ownLoginEnv();
   Object.assign(env, { ANTHROPIC_BASE_URL: URL_, ANTHROPIC_AUTH_TOKEN: KEY });
+  // Show "free-gateway" as the model, not the Claude model from ~/.claude/settings.json with its API prices. The
+  // gateway reads that name as the free chain. A --model you pass still wins.
+  for (const v of ["ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"]) env[v] = "free-gateway";
   say("Claude Code on free models. If they run dry mid-session, restart with: fgw claude --sub");
   run("claude", args, env);
 }
@@ -83,7 +86,7 @@ switch (cmd) {
     break;
   }
   case "env":
-    console.log(`export ANTHROPIC_BASE_URL=${URL_}\nexport ANTHROPIC_AUTH_TOKEN=${KEY || "<FREE_GATEWAY_KEY>"}\n# OpenAI clients: base URL ${URL_}/v1, API key the same, model "auto"`);
+    console.log(`export ANTHROPIC_BASE_URL=${URL_}\nexport ANTHROPIC_AUTH_TOKEN=${KEY || "<FREE_GATEWAY_KEY>"}\nexport ANTHROPIC_MODEL=free-gateway\n# OpenAI clients: base URL ${URL_}/v1, API key the same, model "auto"`);
     break;
   default:
     console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1).filter((l) => l.startsWith("//")).map((l) => l.slice(3)).join("\n"));

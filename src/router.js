@@ -13,7 +13,9 @@ export function parseModel(requested, modeOverride) {
   let mode = modeOverride && [...TIERS, "auto"].includes(modeOverride) ? modeOverride : getMode();
   let exact = null;
   let provider = null;
-  if (TIERS.includes(raw)) return { mode: raw, exact, provider, raw };
+  // "free-gateway" is the label `fgw` gives Claude Code, so its screen shows the gateway instead of a Claude model
+  // name (which would look billed). Like "auto", it means the whole free chain.
+  if (TIERS.includes(raw) || /^free-gateway$/i.test(raw)) return { mode, exact, provider, raw };
   const m = raw.match(/^([\w.-]+)::(.+)$/);
   if (m) {
     if (TIERS.includes(m[1])) mode = m[1];
