@@ -265,6 +265,15 @@ test("the fgw label free-gateway means the whole free chain", async () => {
   assert.ok(res.headers.get("x-gateway-model"));
 });
 
+test("a request bigger than a model's tokens-per-minute limit skips it; small ones still use it", async () => {
+  const big = "x".repeat(60_000); // ~12k tokens, over the fake's 8000 TPM header
+  const res = await post("/v1/chat/completions", { model: "fake::good", messages: [{ role: "user", content: big }] });
+  assert.equal(res.status, 503);
+  assert.match((await res.json()).error.message, /tokens-per-minute limit/);
+  const small = await post("/v1/chat/completions", { model: "fake::good", messages: [{ role: "user", content: "hi" }] });
+  assert.equal(small.status, 200);
+});
+
 test("models list and health", async () => {
   const models = await (await fetch(`${gateway}/v1/models`, { headers: { "x-api-key": KEY } })).json();
   assert.ok(models.data.some((m) => m.id === "fake::good"));

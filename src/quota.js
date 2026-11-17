@@ -36,6 +36,25 @@ export function noteQuotaError(providerId, model, message) {
   e.learned = { ...(e.learned ?? {}), [model]: { limit, at: Date.now() } };
 }
 
+// A 413 "on tokens per minute (TPM): Limit 8000, Requested 22429" teaches that model's TPM limit, so the next
+// request that size skips it instead of being refused again.
+export function noteTooLarge(providerId, model, message) {
+  const limit = Number(String(message ?? "").match(/tokens per minute[^]*?limit:?\s*(\d+)/i)?.[1]);
+  if (!limit) return;
+  const e = entry(providerId);
+  e.models.set(model, { ...(e.models.get(model) ?? {}), limitTokens: limit, at: Date.now() });
+}
+
+// The tokens-per-minute limit known for a model: learned from headers or a 413, else the provider's configured
+// maxRequestTokens. A request bigger than this can never pass, however long it waits.
+export function tpmLimitOf(provider, model) {
+  return quotas.get(provider.id)?.models.get(model)?.limitTokens ?? provider.maxRequestTokens;
+}
+
+// Rough size of a request in tokens (~5 characters per token for JSON-heavy prompts; Groq counted a Claude Code
+// request of 161k characters as 22.4k tokens, so this errs slightly high).
+export const estimateTokens = (body) => Math.ceil(JSON.stringify({ s: body.system, m: body.messages, t: body.tools }).length / 5);
+
 async function getJson(url, key) {
   const res = await fetch(url, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

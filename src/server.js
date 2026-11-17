@@ -10,7 +10,7 @@ import { createServer } from "node:http";
 import { GATEWAY_KEY, MODES, config } from "./config.js";
 import { anthropicToOpenAIRequest, anthropicUsage, openAIStreamToAnthropic, openAIToAnthropicResponse } from "./convert/anthropic.js";
 import { UpstreamError, callOpenAI, catalogView, refreshCatalog } from "./providers.js";
-import { QUOTA_REFRESH_MS, quotaView, refreshQuotas } from "./quota.js";
+import { QUOTA_REFRESH_MS, estimateTokens, quotaView, refreshQuotas, tpmLimitOf } from "./quota.js";
 import { noteAttempt, noteFailure, plan, skipReason } from "./router.js";
 import { startSSE, writeData, writeEvent } from "./sse.js";
 import { activeCooldowns, clearCooldown, recordUsage, usageDays } from "./state.js";
@@ -104,9 +104,13 @@ async function serve(req, res, surface, body) {
   const tried = [];
   const maxAttempts = config.maxAttempts ?? 10;
   let attempts = 0;
+  const size = estimateTokens(body);
   for (const c of candidates) {
     if (attempts >= maxAttempts) break;
-    const skip = body.tools?.length && c.provider.tools === false ? "no tool support" : skipReason(c);
+    const tpm = tpmLimitOf(c.provider, c.model);
+    const skip = body.tools?.length && c.provider.tools === false ? "no tool support"
+      : tpm && size > tpm ? `request ~${size} tokens is over its ${tpm} tokens-per-minute limit`
+      : skipReason(c);
     if (skip) {
       tried.push(`${c.provider.id}::${c.model} skipped: ${skip}`);
       continue;

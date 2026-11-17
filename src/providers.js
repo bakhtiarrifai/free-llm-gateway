@@ -1,6 +1,6 @@
 // The catalog of usable models, and calling an upstream over OpenAI-compatible HTTP.
 import { config, enabled, keyOf } from "./config.js";
-import { noteQuotaError, noteRateHeaders } from "./quota.js";
+import { noteQuotaError, noteRateHeaders, noteTooLarge } from "./quota.js";
 import { parseSSE } from "./sse.js";
 
 // Every upstream with the tier it belongs to and the wire format it speaks.
@@ -105,6 +105,7 @@ export async function callOpenAI(p, body, { signal } = {}) {
       message = e?.error?.message ?? e?.message ?? message;
     } catch {}
     if (res.status === 429) noteQuotaError(p.id, body.model, message);
+    if (res.status === 413) noteTooLarge(p.id, body.model, message);
     throw new UpstreamError(res.status, message, { retryAfter: retryAfterOf(res.headers) });
   }
   // A 200 that is not what an OpenAI-compatible API sends (a placeholder page, a retired endpoint answering "OK")

@@ -39,6 +39,8 @@ const FREE = [
     // Free tier: small tokens-per-minute limits (8k on some models), so long Claude Code prompts are refused (413)
     // and fall through to the next provider. Chat and short prompts fit fine.
     maxOutput: 16_384,
+    // Until Groq's headers say otherwise: free-tier TPM limit. Bigger requests (Claude Code's ~22k) skip Groq.
+    maxRequestTokens: 8000,
   },
   {
     id: "gemini", key: "GEMINI_API_KEY", base: "https://generativelanguage.googleapis.com/v1beta/openai",
