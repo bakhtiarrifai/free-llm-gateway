@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# secrets: API keys live only in .env files, never in Git
+.env
+.env.*
+*.env
+!.env.example
+
+# runtime state written by the gateway (cooldowns, usage stats)
+state.json
+state.json.tmp
+config.json
+
+# logs and OS/editor clutter
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/
+.idea/

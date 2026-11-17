@@ -1,0 +1,16 @@
+{
+  "name": "free-llm-gateway",
+  "version": "0.1.0",
+  "description": "One OpenAI- and Anthropic-compatible endpoint in front of the official free tiers of Groq, Gemini, OpenRouter, NVIDIA, Cloudflare, Cerebras and Mistral, with automatic fallback. Runs Claude Code on free models.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "fgw": "bin/fgw.js" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.mjs",
+    "check": "node scripts/check.js"
+  },
+  "engines": { "node": ">=22" },
+  "keywords": ["llm", "gateway", "free", "openai", "anthropic", "claude-code", "groq", "gemini", "openrouter"],
+  "repository": { "type": "git", "url": "https://github.com/bakhtiarrifai/free-llm-gateway" }
+}
