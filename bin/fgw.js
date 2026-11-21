@@ -64,8 +64,19 @@ async function claude(args) {
     say(`gateway unreachable (${err.message}); using your own Claude login`);
     return run("claude", args, ownLoginEnv());
   }
+  const claudeSettings = join(homedir(), ".claude", "settings.json");
+  if (existsSync(claudeSettings)) {
+    try {
+      const s = JSON.parse(readFileSync(claudeSettings, "utf8"));
+      if (s.env?.ANTHROPIC_BASE_URL) say(`warning: ~/.claude/settings.json overrides ANTHROPIC_BASE_URL to "${s.env.ANTHROPIC_BASE_URL}"`);
+    } catch {}
+  }
   const env = ownLoginEnv();
-  Object.assign(env, { ANTHROPIC_BASE_URL: URL_, ANTHROPIC_AUTH_TOKEN: KEY });
+  Object.assign(env, {
+    ANTHROPIC_BASE_URL: URL_,
+    ANTHROPIC_AUTH_TOKEN: KEY,
+    CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
+  });
   // Show "free-gateway" as the model, not the Claude model from ~/.claude/settings.json with its API prices. The
   // gateway reads that name as the free chain. A --model you pass still wins.
   for (const v of ["ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"]) env[v] = "free-gateway";

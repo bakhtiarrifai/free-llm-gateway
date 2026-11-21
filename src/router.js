@@ -81,6 +81,7 @@ export function classify(err, c) {
     const providerWide = /quota|per day|daily|billing|credits/.test(msg);
     return { retry: true, key: providerWide ? c.provider.id : model, seconds: err.retryAfter ?? (providerWide ? cd.rateLimit * 10 : cd.rateLimit), reason: "rate limited" };
   }
+  if (s === 402 || err.type === "billing_error" || /credit balance/.test(msg)) return { retry: true, key: c.provider.id, seconds: cd.billing, reason: "out of credit" };
   // 401 is the key itself. 403 is often one model refusing this key (OpenRouter: "only available on agentic
   // harnesses", region or moderation blocks), so only that model sits out unless the message is about the key.
   if (s === 401 || (s === 403 && /api key|invalid key|unauthori[sz]ed|authentication/.test(msg))) return { retry: true, key: c.provider.id, seconds: cd.auth, reason: `key rejected (${s})` };
