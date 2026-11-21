@@ -61,23 +61,64 @@ const retryAfterOf = (headers) => {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 };
 
-// Waits for the first record so a failure can still fall over to the next model before anything reaches the client.
-async function primed(iterable, timeoutMs) {
+// One deadline covers connection, headers and the first complete record/body.
+function callScope(parent, timeoutMs, streaming) {
+  const controller = new AbortController();
+  const abort = () => controller.abort(parent.reason);
+  if (parent?.aborted) abort();
+  else parent?.addEventListener("abort", abort, { once: true });
+  const firstTimer = setTimeout(() => controller.abort(new Error(`no response within ${timeoutMs / 1000} s`)), timeoutMs);
+  const totalTimer = streaming ? setTimeout(() => controller.abort(new Error("upstream stream exceeded 10 minutes")), 10 * 60_000) : null;
+  return {
+    signal: controller.signal,
+    ready: () => clearTimeout(firstTimer),
+    abort: (reason) => controller.abort(reason),
+    close() {
+      clearTimeout(firstTimer);
+      clearTimeout(totalTimer);
+      parent?.removeEventListener("abort", abort);
+      if (!controller.signal.aborted) controller.abort();
+    },
+  };
+}
+
+function cancelled(promise, signal) {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+async function primed(iterable, scope, idleMs) {
   const it = iterable[Symbol.asyncIterator]();
-  let timer;
-  const first = await Promise.race([
-    it.next(),
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new UpstreamError(0, `no response within ${timeoutMs / 1000} s`)), timeoutMs);
-    }),
-  ]).finally(() => clearTimeout(timer));
+  const next = () => cancelled(it.next(), scope.signal);
+  let first;
+  try {
+    first = await next();
+    if (first.done) throw new UpstreamError(502, "upstream ended without any stream records");
+  } catch (err) {
+    scope.close();
+    Promise.resolve(it.return?.()).catch(() => {});
+    throw err;
+  }
+  scope.ready();
   return {
     async *[Symbol.asyncIterator]() {
-      if (!first.done) yield first.value;
-      while (true) {
-        const n = await it.next();
-        if (n.done) return;
-        yield n.value;
+      try {
+        yield first.value;
+        while (true) {
+          const timer = setTimeout(() => scope.abort(new Error(`upstream stream idle for ${idleMs / 1000} s`)), idleMs);
+          let n;
+          try { n = await next(); } finally { clearTimeout(timer); }
+          if (n.done) return;
+          yield n.value;
+        }
+      } finally {
+        scope.close();
+        // Abort before return; a stalled iterator can have a pending next().
+        Promise.resolve(it.return?.()).catch(() => {});
       }
     },
   };
@@ -89,12 +130,9 @@ export async function callOpenAI(p, body, { signal } = {}) {
   if (keyOf(p)) headers.authorization = `Bearer ${keyOf(p)}`;
   if (p.id === "openrouter") Object.assign(headers, { "http-referer": config.referer, "x-title": "free-llm-gateway" });
   const timeout = p.firstByteTimeoutMs ?? config.firstByteTimeoutMs;
-  let res;
+  const scope = callScope(signal, timeout, body.stream);
   try {
-    res = await fetch(`${p.base.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers, body: JSON.stringify(body), signal: signal ?? AbortSignal.timeout(body.stream ? 10 * 60_000 : timeout) });
-  } catch (err) {
-    throw new UpstreamError(0, err.name === "TimeoutError" ? `no response within ${timeout / 1000} s` : err.message);
-  }
+  const res = await fetch(`${p.base.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers, body: JSON.stringify(body), signal: scope.signal });
   noteRateHeaders(p.id, body.model, res.headers);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -116,6 +154,7 @@ export async function callOpenAI(p, body, { signal } = {}) {
     try {
       const json = JSON.parse(text);
       if (!Array.isArray(json.choices)) throw new Error("no choices");
+      scope.close();
       return json;
     } catch {
       throw new UpstreamError(502, `not an OpenAI chat response (${type || "no content-type"}): ${text.slice(0, 80)}`);
@@ -125,5 +164,11 @@ export async function callOpenAI(p, body, { signal } = {}) {
     const text = await res.text().catch(() => "");
     throw new UpstreamError(502, `not a stream (${type || "no content-type"}): ${text.slice(0, 80)}`);
   }
-  return primed(parseSSE(res.body), timeout);
+  return await primed(parseSSE(res.body), scope, p.streamIdleTimeoutMs ?? config.streamIdleTimeoutMs);
+  } catch (err) {
+    const reason = scope.signal.aborted ? scope.signal.reason : err;
+    scope.close();
+    if (err instanceof UpstreamError) throw err;
+    throw new UpstreamError(0, reason?.message ?? String(reason));
+  }
 }

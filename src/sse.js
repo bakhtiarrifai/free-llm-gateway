@@ -35,7 +35,9 @@ function toRecord(raw) {
 }
 
 export function startSSE(res) {
-  res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", connection: "keep-alive", "x-accel-buffering": "no" });
+  res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive", "x-accel-buffering": "no" });
+  res.flushHeaders();
+  res.write(": connected\n\n");
 }
 export const writeData = (res, data) => res.write(`data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`);
 export const writeEvent = (res, event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);

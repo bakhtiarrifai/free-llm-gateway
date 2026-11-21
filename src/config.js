@@ -83,6 +83,10 @@ const DEFAULTS = {
   // Seconds a model or provider sits out after each kind of failure.
   cooldown: { rateLimit: 60, serverError: 30, timeout: 45, auth: 3600, billing: 6 * 3600, notFound: 6 * 3600 },
   firstByteTimeoutMs: 45_000,
+  // Bound all fallback attempts before a response, below the proxy's 120s read deadline.
+  requestTimeoutMs: 90_000,
+  streamIdleTimeoutMs: 90_000,
+  sseHeartbeatMs: 15_000,
   // Output-token cap for OpenAI-compatible upstreams without their own maxOutput (Claude Code asks for 128k).
   defaultMaxOutput: 32_768,
   rediscoverMinutes: 360,

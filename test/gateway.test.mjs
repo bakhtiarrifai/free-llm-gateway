@@ -104,7 +104,7 @@ after(() => servers.forEach((s) => s.close()));
 const post = (path, body, headers = {}) => fetch(gateway + path, { method: "POST", headers: { authorization: `Bearer ${KEY}`, "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 async function events(res) {
   const text = await res.text();
-  return text.split("\n\n").filter(Boolean).map((block) => {
+  return text.split("\n\n").filter((block) => /^data:/m.test(block)).map((block) => {
     const ev = block.match(/^event: (.*)$/m)?.[1];
     const data = block.match(/^data: (.*)$/m)?.[1];
     return { event: ev, data: data === "[DONE]" ? data : JSON.parse(data) };

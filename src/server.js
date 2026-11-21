@@ -64,7 +64,7 @@ const viaAccess = (req) => process.env.TRUST_CF_ACCESS === "1" && Boolean(req.he
 
 // ------------------------------------------------------------------ one attempt against one candidate
 // Returns { body } for a whole response, or { stream } of records already in the client's format.
-async function attempt(c, surface, body) {
+async function attempt(c, surface, body, signal) {
   const p = c.provider;
   const stream = Boolean(body.stream);
   const cap = p.maxOutput ?? config.defaultMaxOutput;
@@ -72,13 +72,13 @@ async function attempt(c, surface, body) {
     const out = { ...body, model: c.model };
     if (cap && out.max_tokens > cap) out.max_tokens = cap;
     if (cap && out.max_completion_tokens > cap) out.max_completion_tokens = cap;
-    const r = await callOpenAI(p, out);
+    const r = await callOpenAI(p, out, { signal });
     return stream ? { stream: r } : { body: r };
   }
   // Anthropic client (Claude Code, Anthropic SDKs): translate to OpenAI and back.
   // Claude Code asks for up to 128k output tokens; most OpenAI-compatible models reject more than they allow.
   const out = anthropicToOpenAIRequest(body, { model: c.model, maxOutput: cap, streamOptions: p.streamOptions !== false, signatures: p.thoughtSignatures === true });
-  const r = await callOpenAI(p, out);
+  const r = await callOpenAI(p, out, { signal });
   return stream ? { stream: openAIStreamToAnthropic(r, c.model) } : { body: openAIToAnthropicResponse(r, c.model) };
 }
 
@@ -102,11 +102,21 @@ function account(c, usage, ok, started) {
 async function serve(req, res, surface, body) {
   const { want, candidates } = plan({ requested: body.model });
   const tried = [];
+  const controller = new AbortController();
+  const disconnect = () => { if (!res.writableEnded) controller.abort(new Error("client disconnected")); };
+  req.on("aborted", disconnect);
+  res.on("close", disconnect);
+  let expired = false;
+  const deadline = setTimeout(() => {
+    expired = true;
+    controller.abort(new Error("gateway response deadline exceeded"));
+  }, Math.min(config.requestTimeoutMs, 100_000));
+  try {
   const maxAttempts = config.maxAttempts ?? 10;
   let attempts = 0;
   const size = estimateTokens(body);
   for (const c of candidates) {
-    if (attempts >= maxAttempts) break;
+    if (controller.signal.aborted || attempts >= maxAttempts) break;
     const tpm = tpmLimitOf(c.provider, c.model);
     const skip = body.tools?.length && c.provider.tools === false ? "no tool support"
       : tpm && size > tpm ? `request ~${size} tokens is over its ${tpm} tokens-per-minute limit`
@@ -120,8 +130,9 @@ async function serve(req, res, surface, body) {
     const started = Date.now();
     let result;
     try {
-      result = await attempt(c, surface, body);
+      result = await attempt(c, surface, body, controller.signal);
     } catch (err) {
+      if (controller.signal.aborted) break;
       if (!(err instanceof UpstreamError)) throw err;
       const k = noteFailure(c, err);
       account(c, null, false, started);
@@ -129,6 +140,8 @@ async function serve(req, res, surface, body) {
       tried.push(`${c.provider.id}::${c.model} ${err.status || "network"}: ${k.reason}${err.message && k.reason !== err.message ? ` - ${err.message.slice(0, 160)}` : ""}`);
       continue;
     }
+    clearTimeout(deadline);
+    if (controller.signal.aborted) break;
     clearCooldown(c.provider.id, c.model);
     const headers = { "x-gateway-provider": c.provider.id, "x-gateway-model": c.model, "x-gateway-tier": c.tier, "x-gateway-attempts": String(attempts) };
     if (result.body) {
@@ -139,6 +152,10 @@ async function serve(req, res, surface, body) {
     for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
     startSSE(res);
     let usage = { inputTokens: 0, outputTokens: 0 };
+    let ok = true;
+    const heartbeat = setInterval(() => {
+      if (!res.destroyed && !res.writableEnded && !res.writableNeedDrain) res.write(": keepalive\n\n");
+    }, Math.min(config.sseHeartbeatMs, 30_000));
     try {
       for await (const rec of result.stream) {
         if (res.destroyed) break;
@@ -153,19 +170,33 @@ async function serve(req, res, surface, body) {
       if (surface === "openai") writeData(res, "[DONE]");
     } catch (err) {
       // Too late to fall over: the client already has part of the answer.
+      ok = false;
+      if (controller.signal.aborted || res.destroyed) return;
+      noteFailure(c, err);
       const message = `upstream ${c.provider.id}::${c.model} failed mid-stream: ${err.message}`;
       if (surface === "openai") writeData(res, { error: { message, type: "upstream_error" } });
       else writeEvent(res, "error", { type: "error", error: { type: "api_error", message } });
+    } finally {
+      clearInterval(heartbeat);
     }
     res.end();
-    account(c, usage, true, started);
+    account(c, usage, ok, started);
     return;
   }
 
+  if (res.destroyed || (controller.signal.aborted && !expired)) return;
+  if (expired) {
+    return json(res, 504, errorBody(surface, 504, "api_error", "gateway_response_timeout: upstream attempts exceeded the response deadline; no answer data was sent."), { "x-gateway-timeout": "1" });
+  }
   // Nothing left.
   const none = want.exact && !candidates.length ? ` Model "${want.exact}" is not offered${want.provider ? ` on ${want.provider}` : ""} (see GET /v1/models).` : " No provider has a key configured.";
   const message = `pool_exhausted. All free models are used up or unavailable right now; try again later, or start Claude Code on your own subscription (fgw claude --sub).${tried.length ? ` Tried: ${tried.join(" | ")}` : none}`;
   json(res, 503, errorBody(surface, 503, surface === "anthropic" ? "overloaded_error" : "pool_exhausted", message), { "x-gateway-exhausted": "1" });
+  } finally {
+    clearTimeout(deadline);
+    req.off("aborted", disconnect);
+    res.off("close", disconnect);
+  }
 }
 
 // ------------------------------------------------------------------ other endpoints
