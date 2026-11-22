@@ -129,10 +129,18 @@ Urutan provider, model pilihan (`prefer`), cooldown, dan batas output bisa ditim
 `GATEWAY_HOST=0.0.0.0` dan pasang di belakang HTTPS (misalnya Cloudflare Tunnel). Kalau dashboard dilindungi
 Cloudflare Access, set `TRUST_CF_ACCESS=1` agar pengguna yang sudah login bisa membukanya tanpa `?key=`.
 
+Provider yang gagal dicek saat start (misalnya jaringan belum siap setelah boot) dicoba lagi setelah 30 detik sampai
+tiap 10 menit (`discoveryRetrySeconds`), tidak menunggu 6 jam. Kalau dijalankan sebagai service systemd user, drop-in
+`deploy/systemd/free-llm-gateway.service.d/wait-for-network.conf` membuatnya menunggu DNS dulu.
+
+Setiap request model menulis satu baris `[request]` ke log: status, hasil (`ok`, `timeout`, `exhausted`,
+`stream-error`, `rejected`, `client-closed`), durasi, waktu baca body, provider, dan model. Isi prompt dan key tidak
+dicatat. Matikan dengan `"requestLog": false`.
+
 ### Tes
 
 ```bash
-npm test     # 16 tes end-to-end dengan upstream palsu
+npm test     # 31 tes end-to-end dengan upstream palsu
 ```
 
 Lisensi MIT.
@@ -262,10 +270,18 @@ Provider order, preferred models (`prefer`), cooldowns and output caps can be ov
 `GATEWAY_HOST=0.0.0.0` and put it behind HTTPS (for example a Cloudflare Tunnel). If the dashboard sits behind
 Cloudflare Access, set `TRUST_CF_ACCESS=1` so logged-in users can open it without `?key=`.
 
+Providers that fail to list at start (for example when the network is not up yet after a boot) are tried again after
+30 s up to every 10 minutes (`discoveryRetrySeconds`), not after 6 hours. When it runs as a systemd user service, the
+drop-in `deploy/systemd/free-llm-gateway.service.d/wait-for-network.conf` makes it wait for DNS first.
+
+Each model request writes one `[request]` line to the log: status, outcome (`ok`, `timeout`, `exhausted`,
+`stream-error`, `rejected`, `client-closed`), duration, body read time, provider and model. Prompts and keys are never
+logged. Turn it off with `"requestLog": false`.
+
 ### Tests
 
 ```bash
-npm test     # 16 end-to-end tests against fake upstreams
+npm test     # 31 end-to-end tests against fake upstreams
 ```
 
 MIT license.

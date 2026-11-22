@@ -9,7 +9,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { GATEWAY_KEY, MODES, config } from "./config.js";
 import { anthropicToOpenAIRequest, anthropicUsage, openAIStreamToAnthropic, openAIToAnthropicResponse } from "./convert/anthropic.js";
-import { UpstreamError, callOpenAI, catalogView, refreshCatalog } from "./providers.js";
+import { UpstreamError, callOpenAI, catalogView, refreshCatalog, retryFailedDiscovery } from "./providers.js";
 import { QUOTA_REFRESH_MS, estimateTokens, quotaView, refreshQuotas, tpmLimitOf } from "./quota.js";
 import { noteAttempt, noteFailure, plan, skipReason } from "./router.js";
 import { startSSE, writeData, writeEvent } from "./sse.js";
@@ -99,8 +99,9 @@ function account(c, usage, ok, started) {
 }
 
 // ------------------------------------------------------------------ the fallback loop
-async function serve(req, res, surface, body) {
+async function serve(req, res, surface, body, trace = {}) {
   const { want, candidates } = plan({ requested: body.model });
+  Object.assign(trace, { mode: want.mode, requested: body.model, stream: Boolean(body.stream) });
   const tried = [];
   const controller = new AbortController();
   const disconnect = () => { if (!res.writableEnded) controller.abort(new Error("client disconnected")); };
@@ -123,9 +124,11 @@ async function serve(req, res, surface, body) {
       : skipReason(c);
     if (skip) {
       tried.push(`${c.provider.id}::${c.model} skipped: ${skip}`);
+      trace.skipped = (trace.skipped ?? 0) + 1;
       continue;
     }
     attempts += 1;
+    trace.attempts = attempts;
     noteAttempt(c);
     const started = Date.now();
     let result;
@@ -143,6 +146,7 @@ async function serve(req, res, surface, body) {
     clearTimeout(deadline);
     if (controller.signal.aborted) break;
     clearCooldown(c.provider.id, c.model);
+    Object.assign(trace, { provider: `${c.provider.id}::${c.model}`, tier: c.tier });
     const headers = { "x-gateway-provider": c.provider.id, "x-gateway-model": c.model, "x-gateway-tier": c.tier, "x-gateway-attempts": String(attempts) };
     if (result.body) {
       json(res, 200, result.body, headers);
@@ -172,6 +176,7 @@ async function serve(req, res, surface, body) {
       // Too late to fall over: the client already has part of the answer.
       ok = false;
       if (controller.signal.aborted || res.destroyed) return;
+      trace.outcome = "stream-error";
       noteFailure(c, err);
       const message = `upstream ${c.provider.id}::${c.model} failed mid-stream: ${err.message}`;
       if (surface === "openai") writeData(res, { error: { message, type: "upstream_error" } });
@@ -186,17 +191,39 @@ async function serve(req, res, surface, body) {
 
   if (res.destroyed || (controller.signal.aborted && !expired)) return;
   if (expired) {
+    trace.outcome = "timeout";
     return json(res, 504, errorBody(surface, 504, "api_error", "gateway_response_timeout: upstream attempts exceeded the response deadline; no answer data was sent."), { "x-gateway-timeout": "1" });
   }
   // Nothing left.
   const none = want.exact && !candidates.length ? ` Model "${want.exact}" is not offered${want.provider ? ` on ${want.provider}` : ""} (see GET /v1/models).` : " No provider has a key configured.";
   const message = `pool_exhausted. All free models are used up or unavailable right now; try again later, or start Claude Code on your own subscription (fgw claude --sub).${tried.length ? ` Tried: ${tried.join(" | ")}` : none}`;
+  trace.outcome = "exhausted";
   json(res, 503, errorBody(surface, 503, surface === "anthropic" ? "overloaded_error" : "pool_exhausted", message), { "x-gateway-exhausted": "1" });
   } finally {
     clearTimeout(deadline);
     req.off("aborted", disconnect);
     res.off("close", disconnect);
   }
+}
+
+// One line per model request, written when the connection closes, so slow reads, timeouts and clients that gave up
+// all show up with their real duration. Only routing facts: never the prompt, the answer or a key.
+function traceRequest(req, res, surface) {
+  const started = Date.now();
+  const trace = {};
+  if (!config.requestLog) return trace;
+  res.once("close", () => {
+    const word = (v) => String(v ?? "-").replace(/\s+/g, "_").slice(0, 80);
+    const outcome = trace.outcome ?? (!res.writableEnded ? "client-closed" : res.statusCode >= 400 ? "rejected" : "ok");
+    const fields = [
+      surface, res.headersSent ? res.statusCode : "-", outcome, `${Date.now() - started}ms`,
+      `read=${trace.readMs ?? "-"}ms`, `mode=${word(trace.mode)}`, `asked=${word(trace.requested)}`,
+      `stream=${trace.stream ? 1 : 0}`, `via=${word(trace.provider)}`, `tier=${word(trace.tier)}`,
+      `attempts=${trace.attempts ?? 0}`, `skipped=${trace.skipped ?? 0}`,
+    ];
+    console.log(`[request] ${fields.join(" ")}`);
+  });
+  return trace;
 }
 
 // ------------------------------------------------------------------ other endpoints
@@ -244,7 +271,13 @@ export function createGateway() {
         const body = await readBody(req);
         return json(res, 200, { input_tokens: Math.ceil(JSON.stringify({ s: body.system, m: body.messages, t: body.tools }).length / 4) });
       }
-      if (req.method === "POST" && (path === "/v1/chat/completions" || path === "/v1/messages")) return await serve(req, res, surface, await readBody(req));
+      if (req.method === "POST" && (path === "/v1/chat/completions" || path === "/v1/messages")) {
+        const trace = traceRequest(req, res, surface);
+        const read = Date.now();
+        const body = await readBody(req);
+        trace.readMs = Date.now() - read;
+        return await serve(req, res, surface, body, trace);
+      }
       return json(res, 404, errorBody(surface, 404, "not_found_error", `no route for ${req.method} ${path}`));
     } catch (err) {
       if (res.headersSent) return res.end();
@@ -259,7 +292,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   }
   const view = await refreshCatalog();
-  setInterval(() => refreshCatalog().catch(() => {}), config.rediscoverMinutes * 60_000).unref();
+  // Providers that could not be listed (often no network yet right after boot) are tried again soon, not in 6 hours.
+  let stopRetry = retryFailedDiscovery();
+  setInterval(async () => {
+    await refreshCatalog().catch(() => {});
+    stopRetry();
+    stopRetry = retryFailedDiscovery();
+  }, config.rediscoverMinutes * 60_000).unref();
   refreshQuotas(true).catch(() => {});
   setInterval(() => refreshQuotas(true).catch(() => {}), QUOTA_REFRESH_MS).unref();
   createGateway().listen(config.port, config.host, () => {

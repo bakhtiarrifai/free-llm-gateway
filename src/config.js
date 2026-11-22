@@ -90,6 +90,11 @@ const DEFAULTS = {
   // Output-token cap for OpenAI-compatible upstreams without their own maxOutput (Claude Code asks for 128k).
   defaultMaxOutput: 32_768,
   rediscoverMinutes: 360,
+  // A provider whose model listing failed (no network yet at boot, DNS down) is listed again after these delays,
+  // the last one repeating until it answers, instead of waiting for the next rediscovery.
+  discoveryRetrySeconds: [30, 60, 120, 300, 600],
+  // One line per model request in the log: status, duration, provider, model. No prompts, no keys.
+  requestLog: true,
   // Sent to OpenRouter as HTTP-Referer / X-Title (it shows apps by these). Override with GATEWAY_REFERER.
   referer: env.GATEWAY_REFERER ?? "https://github.com/bakhtiarrifai/free-llm-gateway",
 };

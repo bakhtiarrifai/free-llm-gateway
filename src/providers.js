@@ -26,9 +26,10 @@ async function listModels(p) {
   return [...new Set([...(p.models ?? []), ...kept.sort((a, b) => rank(a) - rank(b))])];
 }
 
-export async function refreshCatalog() {
+// `only`: provider ids to list again; omit for all of them.
+export async function refreshCatalog(only) {
   await Promise.all(
-    upstreams().map(async (p) => {
+    upstreams().filter((p) => !only || only.includes(p.id)).map(async (p) => {
       try {
         catalog.set(p.id, { provider: p, models: await listModels(p), at: Date.now() });
       } catch (err) {
@@ -42,6 +43,33 @@ export async function refreshCatalog() {
 }
 
 // In configured order, not in the order the model listings happened to come back.
+// Lists the failed providers again until each answers, with growing delays (the last one repeats). Returns a stop
+// function. `log` gets one line per provider that comes back.
+export function retryFailedDiscovery({ delays = config.discoveryRetrySeconds, log = console.log } = {}) {
+  let step = 0;
+  let timer;
+  let stopped = false;
+  const failed = () => catalogEntries().filter((e) => e.error).map((e) => e.provider.id);
+  const schedule = () => {
+    if (stopped || !failed().length || !delays?.length) return;
+    timer = setTimeout(run, delays[Math.min(step++, delays.length - 1)] * 1000);
+    timer.unref?.();
+  };
+  const run = async () => {
+    const ids = failed();
+    await refreshCatalog(ids).catch(() => {});
+    for (const e of catalogEntries()) {
+      if (ids.includes(e.provider.id) && !e.error) log(`[catalog] ${e.provider.id} available again: ${e.models.length} models`);
+    }
+    schedule();
+  };
+  schedule();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+}
+
 export const catalogEntries = () => upstreams().map((p) => catalog.get(p.id)).filter(Boolean);
 export const catalogView = () => catalogEntries().map((e) => ({ provider: e.provider.id, tier: e.provider.tier, models: e.models, ...(e.error ? { error: e.error } : {}) }));
 
