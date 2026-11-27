@@ -1,0 +1,2 @@
+# Windows batch files need CRLF line endings: keep the bytes exactly as committed.
+*.bat -text

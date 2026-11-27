@@ -280,3 +280,9 @@ test("models list and health", async () => {
   const health = await (await fetch(`${gateway}/health`, { headers: { authorization: `Bearer ${KEY}` } })).json();
   assert.equal(health.available.free >= 1, true);
 });
+
+test(".env parser: inline comments, CRLF and BOM from Notepad, quoted values", async () => {
+  const { parseEnv } = await import("../src/config.js");
+  const e = parseEnv("﻿GATEWAY_KEY=abcdef\r\nGROQ_API_KEY=gsk_1   # console.groq.com/keys\r\nGEMINI_API_KEY=          # aistudio\r\nA=\"x # y\"  # note\r\nB=p#q\r\n# C=1\r\n");
+  assert.deepEqual(e, { GATEWAY_KEY: "abcdef", GROQ_API_KEY: "gsk_1", GEMINI_API_KEY: "", A: "x # y", B: "p#q" });
+});

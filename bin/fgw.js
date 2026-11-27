@@ -14,7 +14,7 @@ import { join } from "node:path";
 
 const envFile = join(homedir(), ".config", "free-llm-gateway", "client.env");
 if (existsSync(envFile)) {
-  for (const line of readFileSync(envFile, "utf8").split("\n")) {
+  for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
     if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
   }
@@ -30,7 +30,8 @@ async function gateway(path) {
 }
 
 function run(cmd, args, env) {
-  const child = spawn(cmd, args, { stdio: "inherit", env });
+  // Windows: an npm-installed claude is claude.cmd, which only starts through the shell.
+  const child = spawn(cmd, args, { stdio: "inherit", env, shell: process.platform === "win32" });
   child.on("exit", (code, signal) => process.exit(signal ? 1 : (code ?? 0)));
   child.on("error", (err) => {
     say(`could not start ${cmd}: ${err.message}`);

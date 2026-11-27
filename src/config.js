@@ -5,14 +5,21 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 // A tiny .env reader (KEY=value per line, # comments, optional quotes). Real environment variables win.
-function loadEnvFile(path) {
-  if (!existsSync(path)) return;
-  for (const line of readFileSync(path, "utf8").split("\n")) {
+// "KEY=value   # note" keeps only "value": an unquoted value ends where whitespace + "#" starts, as in .env.example.
+export function parseEnv(text) {
+  const out = {};
+  for (const line of text.split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
     if (!m || line.trimStart().startsWith("#")) continue;
-    const value = m[2].replace(/^(['"])(.*)\1$/, "$2");
-    if (process.env[m[1]] === undefined) process.env[m[1]] = value;
+    const quoted = m[2].match(/^(['"])(.*)\1(\s+#.*)?$/);
+    out[m[1]] = quoted ? quoted[2] : m[2].replace(/(^|\s+)#.*$/, "");
   }
+  return out;
+}
+
+function loadEnvFile(path) {
+  if (!existsSync(path)) return;
+  for (const [k, v] of Object.entries(parseEnv(readFileSync(path, "utf8")))) if (process.env[k] === undefined) process.env[k] = v;
 }
 
 export const HOME = resolve(process.env.GATEWAY_HOME ?? join(homedir(), ".config", "free-llm-gateway"));

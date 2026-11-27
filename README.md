@@ -34,6 +34,34 @@ npm start                     # http://127.0.0.1:8787
 
 Tidak perlu `npm install`, karena tidak ada dependency. `.env` sudah ada di `.gitignore`, jadi tidak akan ikut ter-commit.
 
+### Windows: install dengan klik dua kali
+
+Tidak perlu terminal, PowerShell, atau CMD.
+
+1. Unduh: di halaman GitHub ini klik **Code → Download ZIP**.
+2. Klik kanan file ZIP → **Extract All…** → **Extract**. (Jangan jalankan dari dalam ZIP.)
+3. Buka folder hasil ekstrak, klik dua kali **`Install-Windows.bat`**.
+   - Kalau muncul *"Windows protected your PC"*, klik **More info → Run anyway**.
+   - Kalau Node.js belum ada, installer memasangnya lewat winget (klik **Yes** saat diminta izin). Kalau winget tidak
+     ada, browser membuka nodejs.org: pasang versi LTS, lalu klik dua kali `Install-Windows.bat` lagi.
+4. Notepad terbuka: isi minimal **satu** API key (lihat [cara mendapatkannya](#cara-mendapatkan-api-key-gratis);
+   paling mudah Gemini), simpan dengan Ctrl+S, tutup.
+5. Klik dua kali **Free LLM Gateway - Start** di Desktop. Biarkan jendelanya terbuka (boleh di-minimize).
+
+Installer membuat shortcut di Desktop:
+
+| Shortcut | Fungsi |
+|---|---|
+| Free LLM Gateway - Start | menyalakan gateway |
+| Free LLM Gateway - Isi API Key | membuka file API key di Notepad (setelah diubah, tutup jendela gateway lalu Start lagi) |
+| Free LLM Gateway - Dashboard | sisa kuota gratis dan model yang siap |
+| Claude Code Gratis | Claude Code lewat gateway (menawarkan pasang Claude Code kalau belum ada) |
+
+`GATEWAY_KEY` dibuat otomatis. API key tersimpan di `%USERPROFILE%\.config\free-llm-gateway\.env`, di luar folder
+unduhan, jadi tetap aman saat kamu mengunduh versi baru (cukup ekstrak dan jalankan `Install-Windows.bat` lagi).
+Jangan pindahkan folder hasil ekstrak setelah install, karena shortcut mengarah ke sana. Untuk menghapus shortcut,
+jalankan `windows\uninstall.bat`.
+
 ### Claude Code di model gratis
 
 ```bash
@@ -177,6 +205,25 @@ npm start                     # http://127.0.0.1:8787
 ```
 
 No `npm install` needed, since there are no dependencies. `.env` is in `.gitignore`, so it is never committed.
+
+### Windows: double-click install
+
+No terminal, PowerShell or CMD needed.
+
+1. Download: on this GitHub page click **Code → Download ZIP**.
+2. Right-click the ZIP → **Extract All…** → **Extract**. (Do not run it from inside the ZIP.)
+3. Open the extracted folder and double-click **`Install-Windows.bat`**.
+   - If *"Windows protected your PC"* appears, click **More info → Run anyway**.
+   - Without Node.js, the installer adds it through winget (click **Yes** at the permission prompt). Without winget,
+     the browser opens nodejs.org: install the LTS version, then double-click `Install-Windows.bat` again.
+4. Notepad opens: fill in at least **one** API key (see [Getting the API keys](#getting-the-api-keys-free); Gemini is
+   the easiest), save with Ctrl+S, close it.
+5. Double-click **Free LLM Gateway - Start** on the Desktop. Leave its window open (minimizing is fine).
+
+Desktop shortcuts: **Start**, **Isi API Key** (edit keys in Notepad, then restart the gateway), **Dashboard**, and
+**Claude Code Gratis** (offers to install Claude Code when missing). `GATEWAY_KEY` is generated for you. Keys live in
+`%USERPROFILE%\.config\free-llm-gateway\.env`, outside the download, so a newer download keeps them. Do not move the
+extracted folder after installing; `windows\uninstall.bat` removes the shortcuts.
 
 ### Claude Code on free models
 

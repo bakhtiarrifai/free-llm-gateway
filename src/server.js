@@ -7,6 +7,8 @@
 //   GET  /status, /status.json  dashboard (gateway key, or a login proxy such as Cloudflare Access)
 import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { GATEWAY_KEY, MODES, config } from "./config.js";
 import { anthropicToOpenAIRequest, anthropicUsage, openAIStreamToAnthropic, openAIToAnthropicResponse } from "./convert/anthropic.js";
 import { UpstreamError, callOpenAI, catalogView, refreshCatalog, retryFailedDiscovery } from "./providers.js";
@@ -286,7 +288,8 @@ export function createGateway() {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL, not `file://${argv[1]}`: on Windows argv[1] is C:\...\server.js and the URL is file:///C:/.../server.js.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (!GATEWAY_KEY || GATEWAY_KEY.length < 16) {
     console.error("Set GATEWAY_KEY (at least 16 characters) in the environment, ./.env or ~/.config/free-llm-gateway/.env");
     process.exit(1);
