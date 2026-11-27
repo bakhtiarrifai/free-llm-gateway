@@ -57,6 +57,15 @@ Installer membuat shortcut di Desktop:
 | Free LLM Gateway - Dashboard | sisa kuota gratis dan model yang siap |
 | Claude Code Gratis | Claude Code lewat gateway (menawarkan pasang Claude Code kalau belum ada) |
 
+Installer juga memasang perintah **`fgw`**. Buka PowerShell atau CMD **baru** (jendela yang sudah terbuka sebelum
+install belum mengenalnya; di VS Code, tutup dan buka lagi VS Code), masuk ke folder project, lalu:
+
+```powershell
+cd D:\PROJECT
+fgw claude        # menyalakan gateway kalau belum jalan, lalu Claude Code di model gratis
+fgw status        # model yang siap dan sisa kuota hari ini
+```
+
 `GATEWAY_KEY` dibuat otomatis. API key tersimpan di `%USERPROFILE%\.config\free-llm-gateway\.env`, di luar folder
 unduhan, jadi tetap aman saat kamu mengunduh versi baru (cukup ekstrak dan jalankan `Install-Windows.bat` lagi).
 Jangan pindahkan folder hasil ekstrak setelah install, karena shortcut mengarah ke sana. Untuk menghapus shortcut,
@@ -221,7 +230,9 @@ No terminal, PowerShell or CMD needed.
 5. Double-click **Free LLM Gateway - Start** on the Desktop. Leave its window open (minimizing is fine).
 
 Desktop shortcuts: **Start**, **Isi API Key** (edit keys in Notepad, then restart the gateway), **Dashboard**, and
-**Claude Code Gratis** (offers to install Claude Code when missing). `GATEWAY_KEY` is generated for you. Keys live in
+**Claude Code Gratis** (offers to install Claude Code when missing). It also puts the **`fgw`** command on your PATH:
+in a **new** PowerShell or CMD window, `cd` to your project and run `fgw claude` (it starts the gateway when needed).
+`GATEWAY_KEY` is generated for you. Keys live in
 `%USERPROFILE%\.config\free-llm-gateway\.env`, outside the download, so a newer download keeps them. Do not move the
 extracted folder after installing; `windows\uninstall.bat` removes the shortcuts.
 

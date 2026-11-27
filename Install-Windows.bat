@@ -61,6 +61,8 @@ echo       lalu Simpan (Ctrl+S) dan tutup Notepad.
 echo    2. Klik dua kali "Free LLM Gateway - Start" di Desktop.
 echo    3. Pakai di aplikasi: Base URL http://127.0.0.1:8787/v1
 echo       API key = GATEWAY_KEY di file yang sama, model "auto".
+echo    4. Claude Code: buka PowerShell/CMD BARU, masuk ke folder project,
+echo       lalu ketik:  fgw claude
 echo.
 echo    Jangan pindahkan atau hapus folder ini:
 echo    %CD%
