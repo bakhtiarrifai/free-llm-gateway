@@ -8,11 +8,12 @@
 //
 // Reads FREE_GATEWAY_URL and FREE_GATEWAY_KEY from the environment or ~/.config/free-llm-gateway/client.env.
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const envFile = join(homedir(), ".config", "free-llm-gateway", "client.env");
+const HOME = join(homedir(), ".config", "free-llm-gateway");
+const envFile = join(HOME, "client.env");
 if (existsSync(envFile)) {
   for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
@@ -29,9 +30,13 @@ async function gateway(path) {
   return res.json();
 }
 
+// Windows: an npm-installed claude is claude.cmd, which only starts through the shell, and the shell joins the
+// arguments as they are. Quote the ones with spaces or shell characters (a settings path under C:\Users\Ada Lovelace).
+const WIN = process.platform === "win32";
+const winQuote = (a) => (/^[\w\-.:\\/=@,+]+$/.test(a) ? a : `"${a.replace(/"/g, '\\"')}"`);
+
 function run(cmd, args, env) {
-  // Windows: an npm-installed claude is claude.cmd, which only starts through the shell.
-  const child = spawn(cmd, args, { stdio: "inherit", env, shell: process.platform === "win32" });
+  const child = spawn(cmd, WIN ? args.map(winQuote) : args, { stdio: "inherit", env, shell: WIN });
   child.on("exit", (code, signal) => process.exit(signal ? 1 : (code ?? 0)));
   child.on("error", (err) => {
     say(`could not start ${cmd}: ${err.message}`);
@@ -65,13 +70,6 @@ async function claude(args) {
     say(`gateway unreachable (${err.message}); using your own Claude login`);
     return run("claude", args, ownLoginEnv());
   }
-  const claudeSettings = join(homedir(), ".claude", "settings.json");
-  if (existsSync(claudeSettings)) {
-    try {
-      const s = JSON.parse(readFileSync(claudeSettings, "utf8"));
-      if (s.env?.ANTHROPIC_BASE_URL) say(`warning: ~/.claude/settings.json overrides ANTHROPIC_BASE_URL to "${s.env.ANTHROPIC_BASE_URL}"`);
-    } catch {}
-  }
   const env = ownLoginEnv();
   Object.assign(env, {
     ANTHROPIC_BASE_URL: URL_,
@@ -82,7 +80,42 @@ async function claude(args) {
   // gateway reads that name as the free chain. A --model you pass still wins.
   for (const v of ["ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"]) env[v] = "free-gateway";
   say("Claude Code on free models. If they run dry mid-session, restart with: fgw claude --sub");
-  run("claude", args, env);
+  run("claude", [...overrideSettings(env), ...args], env);
+}
+
+// The "env" block of ~/.claude/settings.json (or a project's .claude/settings*.json) beats the process environment,
+// so a base URL left there by another gateway would take every request. Settings passed with --settings rank above
+// all of those files: repeat the gateway variables there, blank the other Anthropic ones the files set, and replace
+// an apiKeyHelper (its key would replace ours). The user's own files stay untouched.
+function overrideSettings(env) {
+  const files = [join(homedir(), ".claude", "settings.json"), join(".claude", "settings.json"), join(".claude", "settings.local.json")];
+  const theirs = {};
+  let helper = false;
+  for (const f of files) {
+    try {
+      const s = JSON.parse(readFileSync(f, "utf8"));
+      Object.assign(theirs, s.env ?? {});
+      helper ||= Boolean(s.apiKeyHelper);
+    } catch {}
+  }
+  const ours = {};
+  for (const v of [...CLAUDE_VARS, "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT"]) {
+    if (env[v] !== undefined) ours[v] = env[v];
+    else if (theirs[v] !== undefined) ours[v] = "";
+  }
+  if (theirs.ANTHROPIC_BASE_URL && theirs.ANTHROPIC_BASE_URL !== URL_) say(`ignoring ANTHROPIC_BASE_URL ${theirs.ANTHROPIC_BASE_URL} from your Claude settings for this session`);
+  const settings = { env: ours, model: "free-gateway" };
+  if (helper) settings.apiKeyHelper = `echo ${KEY}`;
+  const file = join(HOME, "claude-settings.json");
+  try {
+    mkdirSync(HOME, { recursive: true });
+    writeFileSync(file, JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 });
+    chmodSync(file, 0o600);
+  } catch (err) {
+    say(`could not write ${file} (${err.message}); settings in ~/.claude/settings.json may still win`);
+    return [];
+  }
+  return ["--settings", file];
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
